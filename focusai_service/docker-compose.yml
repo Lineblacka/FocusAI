@@ -1,0 +1,18 @@
+services:
+  focusai:
+    build: .
+    container_name: focusai_service
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      APP_ENV: prod
+      DATA_DIR: /app/data
+      ALLOWED_HOSTS: localhost,127.0.0.1
+    volumes:
+      - focusai_data:/app/data
+    restart: unless-stopped
+
+volumes:
+  focusai_data:
