@@ -19,6 +19,15 @@ def test_health(tmp_path, monkeypatch):
     assert data['app'] == 'FocusAI'
 
 
+def test_root_serves_spa(tmp_path, monkeypatch):
+    monkeypatch.setenv('DATA_DIR', str(tmp_path))
+    get_settings.cache_clear()
+    client = TestClient(create_app())
+    response = client.get('/', headers={'host': 'localhost'})
+    assert response.status_code == 200
+    assert 'text/html' in response.headers['content-type']
+
+
 def test_security_headers_present(tmp_path, monkeypatch):
     monkeypatch.setenv('DATA_DIR', str(tmp_path))
     get_settings.cache_clear()
