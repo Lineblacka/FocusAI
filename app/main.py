@@ -13,6 +13,8 @@ from api.middleware import (
     SecurityHeadersMiddleware,
 )
 from api.routes import router
+from api.admin_routes import router as admin_router
+from api.analytics_routes import router as analytics_router
 from app.logging_config import configure_logging
 from config.settings import get_settings
 from services.ai_service import AIService
@@ -22,6 +24,7 @@ from services.quality_service import QualityService
 from services.web_search_service import WebSearchService
 from storage.memory_store import MemoryStore
 from storage.rate_limit_store import RateLimitStore
+from storage.analytics_store import AnalyticsStore
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = BASE_DIR / 'static'
@@ -39,6 +42,7 @@ def create_app() -> FastAPI:
     app.state.intent_service = IntentService()
     app.state.memory_store = MemoryStore(settings.memory_path)
     app.state.rate_limit_store = RateLimitStore(settings.rate_limit_path)
+    app.state.analytics_store = AnalyticsStore(settings.analytics_path)
     app.state.ai_service = AIService(settings, app.state.quality_service, app.state.intent_service)
     app.state.web_search_service = WebSearchService()
     app.state.command_service = CommandService(app.state.memory_store)
@@ -61,6 +65,8 @@ def create_app() -> FastAPI:
     app.add_middleware(RequestSizeLimitMiddleware, max_bytes=settings.max_request_bytes)
     app.add_middleware(SecurityHeadersMiddleware)
     app.include_router(router)
+    app.include_router(admin_router)
+    app.include_router(analytics_router)
 
     if STATIC_ASSETS_DIR.exists() and STATIC_INDEX.exists():
         app.mount('/assets', StaticFiles(directory=STATIC_ASSETS_DIR), name='assets')
@@ -71,7 +77,7 @@ def create_app() -> FastAPI:
 
         @app.get('/{full_path:path}', include_in_schema=False)
         def spa_fallback(full_path: str):
-            blocked_prefixes = ('chat', 'command', 'health', 'docs', 'openapi.json')
+            blocked_prefixes = ('chat', 'command', 'health', 'docs', 'openapi.json', 'admin', 'analytics')
             if any(full_path.startswith(prefix) for prefix in blocked_prefixes):
                 return FileResponse(STATIC_INDEX)
             return FileResponse(STATIC_INDEX)

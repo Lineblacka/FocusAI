@@ -98,3 +98,75 @@ export async function streamChat(message, handlers = {}) {
     }
   }
 }
+
+
+export async function adminLogin(username, password) {
+  const response = await fetch(toUrl('/admin/login'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ username, password }),
+  });
+  if (!response.ok) throw new Error(await parseError(response));
+  return response.json();
+}
+
+export async function adminLogout() {
+  const response = await fetch(toUrl('/admin/logout'), {
+    method: 'POST',
+    credentials: 'include',
+  });
+  if (!response.ok) throw new Error(await parseError(response));
+  return response.json();
+}
+
+export async function getAdminMe() {
+  const response = await fetch(toUrl('/admin/me'), {
+    method: 'GET',
+    credentials: 'include',
+  });
+  if (!response.ok) throw new Error(await parseError(response));
+  return response.json();
+}
+
+export async function getAdminAnalytics() {
+  const response = await fetch(toUrl('/admin/analytics/data'), {
+    method: 'GET',
+    credentials: 'include',
+  });
+  if (!response.ok) throw new Error(await parseError(response));
+  return response.json();
+}
+
+
+export async function exportAdminAnalytics() {
+  const response = await fetch(toUrl('/admin/analytics/export'), {
+    method: 'GET',
+    credentials: 'include',
+  });
+  if (!response.ok) throw new Error(await parseError(response));
+  return response.json();
+}
+
+export async function clearAdminAnalytics() {
+  const response = await fetch(toUrl('/admin/analytics/clear'), {
+    method: 'POST',
+    credentials: 'include',
+  });
+  if (!response.ok) throw new Error(await parseError(response));
+  return response.json();
+}
+
+export async function trackAnalyticsEvent(event, { sessionId = '', device = {} } = {}) {
+  try {
+    await fetch(toUrl('/analytics/event'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      keepalive: true,
+      body: JSON.stringify({ event, session_id: sessionId, device }),
+    });
+  } catch {
+    // Analytics must never block the product UI.
+  }
+}

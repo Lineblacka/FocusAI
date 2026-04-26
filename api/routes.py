@@ -10,6 +10,15 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+def track_chat_result(request: Request, session_id: str, model: str | None, latency_seconds: float | None, ok: bool = True, error: str | None = None) -> None:
+    analytics_store = getattr(request.app.state, 'analytics_store', None)
+    if analytics_store is None:
+        return
+    analytics_store.track_message(session_id=session_id, model=model, latency_seconds=latency_seconds, ok=ok)
+    if not ok or error:
+        analytics_store.track_error('chat', error or 'AI response failed', 502 if error else None)
+
+
 def sse_event(event: str, payload: dict) -> str:
     return f'event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n'
 
@@ -34,6 +43,7 @@ def chat(payload: ChatRequest, request: Request):
     shortcut = None if payload.web_search == 'on' else ai_service.quick_reply(payload.message, payload.mode)
     if shortcut and not search_context:
         memory_store.append_turn(payload.message, shortcut['content'], shortcut['model'], shortcut['latency_seconds'], payload.session_id)
+        track_chat_result(request, payload.session_id, shortcut['model'], shortcut['latency_seconds'])
         return ChatResponse(
             reply=shortcut['content'],
             model=None,
@@ -49,6 +59,7 @@ def chat(payload: ChatRequest, request: Request):
     reply = quality_service.clean_output(result['content'])
     quality = quality_service.check(reply)
     memory_store.append_turn(payload.message, reply, result.get('model'), result.get('latency_seconds'), payload.session_id)
+    track_chat_result(request, payload.session_id, result.get('model'), result.get('latency_seconds'), ok=not bool(result.get('error')), error=result.get('error'))
 
     if result.get('error') and not result.get('model'):
         raise HTTPException(status_code=502, detail={'message': reply, 'error': result.get('error')})
@@ -78,6 +89,7 @@ def chat_stream(payload: ChatRequest, request: Request):
     if shortcut and not search_context:
         def shortcut_generator():
             memory_store.append_turn(payload.message, shortcut['content'], shortcut['model'], shortcut['latency_seconds'], payload.session_id)
+            track_chat_result(request, payload.session_id, shortcut['model'], shortcut['latency_seconds'])
             yield sse_event('start', {'intent': shortcut['intent'], 'mode': payload.mode, 'web_search_used': False})
             yield sse_event('done', {
                 'reply': shortcut['content'],
@@ -111,6 +123,7 @@ def chat_stream(payload: ChatRequest, request: Request):
                 final_latency = item.get('latency_seconds')
                 quality = quality_service.check(final_content)
                 memory_store.append_turn(payload.message, final_content, final_model, final_latency, payload.session_id)
+                track_chat_result(request, payload.session_id, final_model, final_latency)
                 yield sse_event('done', {
                     'reply': final_content,
                     'model': None,
@@ -129,6 +142,7 @@ def chat_stream(payload: ChatRequest, request: Request):
                 final_latency = item.get('latency_seconds')
                 final_error = item.get('error')
                 memory_store.append_turn(payload.message, final_content, final_model, final_latency, payload.session_id)
+                track_chat_result(request, payload.session_id, final_model, final_latency, ok=False, error=final_error)
                 yield sse_event('error', {
                     'reply': final_content,
                     'model': None,

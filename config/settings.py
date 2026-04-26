@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     rate_limit_per_minute: int = Field(default=60, alias='RATE_LIMIT_PER_MINUTE')
     max_request_bytes: int = Field(default=65536, alias='MAX_REQUEST_BYTES')
     log_level: str = Field(default='INFO', alias='LOG_LEVEL')
+    admin_username: str = Field(default='admin', alias='ADMIN_USERNAME')
+    admin_password: str = Field(default='change_me', alias='ADMIN_PASSWORD')
+    admin_session_secret: str = Field(default='change_me_random_secret', alias='ADMIN_SESSION_SECRET')
 
     @field_validator('openrouter_api_key')
     @classmethod
@@ -62,6 +65,10 @@ class Settings(BaseSettings):
     @property
     def rate_limit_path(self) -> Path:
         return self.data_dir / 'rate_limit.sqlite3'
+
+    @property
+    def analytics_path(self) -> Path:
+        return self.data_dir / 'analytics.sqlite3'
 
     @property
     def benchmark_path(self) -> Path:

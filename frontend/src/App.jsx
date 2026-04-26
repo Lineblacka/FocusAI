@@ -3,7 +3,8 @@ import { Check, ChevronDown, PanelLeft, X } from 'lucide-react';
 import Sidebar from './components/Sidebar.jsx';
 import Landing from './components/Landing.jsx';
 import ChatView from './components/ChatView.jsx';
-import { streamChat } from './api/focusAiClient.js';
+import { AdminDashboard, AdminLogin } from './components/Admin.jsx';
+import { streamChat, trackAnalyticsEvent } from './api/focusAiClient.js';
 import { createId } from './lib/id.js';
 import { MAX_SESSIONS, MESSAGE_STATUS, ROLE } from './lib/constants.js';
 import {
@@ -15,6 +16,7 @@ import {
 } from './lib/sessionStore.js';
 import { getOrCreateUserId } from './lib/userCookie.js';
 import { useBufferedStream } from './hooks/useBufferedStream.js';
+import { getDeviceInfo } from './lib/deviceInfo.js';
 
 const MODE_STORAGE_KEY = 'focus_mode';
 const MODE_OPTIONS = {
@@ -172,6 +174,10 @@ function loadInitialMode() {
 }
 
 export default function App() {
+  const pathname = typeof window !== 'undefined' ? window.location.pathname : '/';
+  if (pathname === '/admin/login') return <AdminLogin />;
+  if (pathname === '/admin/analytics') return <AdminDashboard />;
+
   const userIdRef = useRef(getOrCreateUserId());
   const initialSessionsRef = useRef(null);
   if (!initialSessionsRef.current) initialSessionsRef.current = loadSessions(userIdRef.current);
@@ -186,6 +192,13 @@ export default function App() {
   const [webSearchArmed, setWebSearchArmed] = useState(false);
   const abortRef = useRef(null);
   const assistantIdRef = useRef(null);
+  const visitTrackedRef = useRef(false);
+
+  useEffect(() => {
+    if (visitTrackedRef.current) return;
+    visitTrackedRef.current = true;
+    trackAnalyticsEvent('visit', { sessionId: userIdRef.current, device: getDeviceInfo() });
+  }, []);
 
   const activeSession = useMemo(
     () => sessions.find((session) => session.id === activeSessionId) || sessions[0],
@@ -246,6 +259,9 @@ export default function App() {
     if (!text || isStreaming || !activeSession) return;
 
     const forceWebSearch = options.forceWebSearch ?? webSearchArmed;
+    if (activeSession.messages.length === 0) {
+      trackAnalyticsEvent('chat_session', { sessionId: userIdRef.current, device: getDeviceInfo() });
+    }
     const webSearch = forceWebSearch ? 'on' : 'auto';
 
     setInput('');
@@ -328,6 +344,7 @@ export default function App() {
 
     if (isStreaming) cancelGeneration();
     const session = createEmptySession('Нов чат');
+    trackAnalyticsEvent('conversation_created', { sessionId: userIdRef.current, device: getDeviceInfo() });
     setSessions((current) => [session, ...current].slice(0, MAX_SESSIONS));
     setActiveSessionId(session.id);
     setInput('');
@@ -353,6 +370,7 @@ export default function App() {
       confirmLabel: 'Изтрий',
       danger: true,
       onConfirm: () => {
+        trackAnalyticsEvent('conversation_deleted', { sessionId: userIdRef.current, device: getDeviceInfo() });
         const next = sessions.filter((session) => session.id !== id);
         const safe = next.length ? next : [createEmptySession('Нов чат')];
         setSessions(safe);
@@ -368,6 +386,7 @@ export default function App() {
       confirmLabel: 'Изтрий всички',
       danger: true,
       onConfirm: () => {
+        trackAnalyticsEvent('conversation_deleted', { sessionId: userIdRef.current, device: getDeviceInfo() });
         const fresh = createEmptySession('Нов чат');
         deleteStoredSessions(userIdRef.current);
         setSessions([fresh]);

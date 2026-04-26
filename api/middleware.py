@@ -56,6 +56,9 @@ class PersistentRateLimitMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         client_key = client_key_from_request(request, self.trusted_proxies)
         if not self.store.check_and_record(client_key, self.limit):
+            analytics_store = getattr(request.app.state, 'analytics_store', None)
+            if analytics_store is not None:
+                analytics_store.track_event('rate_limit')
             return JSONResponse(status_code=429, content={'detail': 'Rate limit exceeded'})
         return await call_next(request)
 

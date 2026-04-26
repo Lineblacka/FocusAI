@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="bg">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>FocusAI Admin</title>
+  <style>
+    :root{color-scheme:dark;--bg:#050505;--text:#f5f5f6;--muted:#898990;--line:rgba(255,255,255,.12);--line2:rgba(255,255,255,.22);font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Arial,sans-serif}
+    *{box-sizing:border-box}
+    body{margin:0;min-height:100vh;background:radial-gradient(circle at 50% -20%,rgba(255,255,255,.1),transparent 36%),#050505;color:var(--text)}
+    main{min-height:100vh;display:grid;place-items:center;padding:24px}
+    .panel{width:min(360px,100%);border:1px solid var(--line);border-radius:24px;background:rgba(255,255,255,.035);box-shadow:0 24px 80px rgba(0,0,0,.55);padding:26px}
+    .brand{display:flex;justify-content:center;margin-bottom:22px}.logo{width:46px;height:46px;border-radius:16px;background:url('/assets/focusai-logo.png') center/contain no-repeat,rgba(255,255,255,.04);border:1px solid var(--line)}
+    h1{margin:0 0 18px;text-align:center;font-size:24px;letter-spacing:-.04em}
+    .fields{display:grid;gap:12px}
+    input{width:100%;height:48px;border:1px solid var(--line);border-radius:16px;background:rgba(0,0,0,.34);color:var(--text);padding:0 14px;font-size:14px;outline:none;transition:border-color .16s ease,box-shadow .16s ease,background .16s ease}
+    input::placeholder{color:#696970}input:focus{border-color:var(--line2);box-shadow:0 0 0 4px rgba(255,255,255,.04);background:rgba(0,0,0,.5)}
+    button{width:100%;height:48px;border:0;border-radius:16px;background:#f4f4f5;color:#050505;font-size:14px;font-weight:850;cursor:pointer;transition:transform .16s ease,opacity .16s ease,background .16s ease}button:hover{transform:translateY(-1px);background:#fff}button:disabled{opacity:.62;cursor:not-allowed;transform:none}
+    #adminLoginMessage{min-height:0}.err{margin-top:12px;border:1px solid rgba(248,113,113,.28);background:rgba(248,113,113,.09);color:#fecaca;border-radius:14px;padding:11px 12px;font-size:13px;line-height:1.35}.ok{margin-top:12px;border:1px solid rgba(134,239,172,.22);background:rgba(34,197,94,.08);color:#bbf7d0;border-radius:14px;padding:11px 12px;font-size:13px;line-height:1.35}
+  </style>
+</head>
+<body>
+  <main>
+    <section class="panel" aria-label="FocusAI admin login">
+      <div class="brand"><div class="logo" aria-hidden="true"></div></div>
+      <h1>Admin Login</h1>
+      <div class="fields">
+        <input id="adminUsername" placeholder="Username" autocomplete="username" />
+        <input id="adminPassword" type="password" placeholder="Password" autocomplete="current-password" />
+        <button id="adminLoginButton" type="button">Login</button>
+      </div>
+      <div id="adminLoginMessage"></div>
+    </section>
+  </main>
+  <script src="/admin/assets/login.js" defer></script>
+
+</body>
+</html>
