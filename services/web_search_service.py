@@ -4,8 +4,7 @@ import logging
 import re
 from typing import Any, Dict, List
 from urllib.parse import parse_qs, quote_plus, unquote, urlparse
-
-import cloudscraper
+from urllib.request import Request, urlopen
 
 
 logger = logging.getLogger(__name__)
@@ -53,10 +52,6 @@ class WebSearchService:
     def __init__(self, timeout_seconds: int = 12):
         self.timeout_seconds = timeout_seconds
         self.user_agent = 'FocusAI/1.0 (+https://github.com/Lineblacka)'
-        self.scraper = cloudscraper.create_scraper(
-            browser={'browser': 'chrome', 'platform': 'windows', 'mobile': False}
-        )
-        self.scraper.headers.update({'User-Agent': self.user_agent})
 
     def should_search(self, query: str, preference: str = 'auto') -> bool:
         if preference == 'on':
@@ -109,10 +104,9 @@ class WebSearchService:
         return deduped[:max_results]
 
     def _fetch_text(self, url: str) -> str:
-        response = self.scraper.get(url, timeout=self.timeout_seconds)
-        response.raise_for_status()
-        response.encoding = response.encoding or 'utf-8'
-        return response.text
+        request = Request(url, headers={'User-Agent': self.user_agent})
+        with urlopen(request, timeout=self.timeout_seconds) as response:
+            return response.read().decode('utf-8', errors='replace')
 
     def _fetch_instant_answer(self, query: str) -> Dict[str, str] | None:
         try:
