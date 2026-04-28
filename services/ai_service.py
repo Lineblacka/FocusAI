@@ -1,9 +1,10 @@
+import json
 import logging
 import time
 from datetime import datetime
 from typing import Any, Dict, Generator, List
 
-from openai import APIError, APITimeoutError, OpenAI, RateLimitError
+import cloudscraper
 
 from app.prompts import BRUTAL_MODE_PROMPT, NORMAL_MODE_PROMPT
 from config.settings import Settings
@@ -18,7 +19,18 @@ class AIService:
         self.settings = settings
         self.quality = quality_service
         self.intent = intent_service
-        self.client = OpenAI(base_url=settings.openrouter_base_url, api_key=settings.openrouter_api_key)
+        self.user_agent = 'FocusAI/1.0 (+https://github.com/Lineblacka)'
+        self.scraper = cloudscraper.create_scraper(
+            browser={'browser': 'chrome', 'platform': 'windows', 'mobile': False}
+        )
+        self.scraper.headers.update(
+            {
+                'Authorization': f'Bearer {settings.openrouter_api_key}',
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'User-Agent': self.user_agent,
+            }
+        )
 
     def system_prompt_for_mode(self, mode: str) -> str:
         return BRUTAL_MODE_PROMPT if mode == 'brutal' else NORMAL_MODE_PROMPT
@@ -143,30 +155,20 @@ class AIService:
                 started = time.time()
                 try:
                     logger.info('model_attempt model=%s attempt=%s stream=false', model, attempt + 1)
-                    response = self.client.chat.completions.create(
-                        model=model,
-                        messages=messages,
-                        temperature=self.settings.model_temperature,
-                        timeout=self.settings.request_timeout_seconds,
-                    )
+                    response = self._create_chat_completion(model, messages, stream=False)
                     latency = round(time.time() - started, 2)
-                    content = self.quality.clean_output(response.choices[0].message.content or '')
+                    content = self.quality.clean_output(self._extract_chat_content(response.json()))
                     if self.quality.is_empty_or_weak(content):
                         logger.warning('empty_or_weak_response model=%s attempt=%s latency=%s', model, attempt + 1, latency)
                         last_error = 'empty_or_weak_response'
                         continue
                     logger.info('model_success model=%s latency=%s stream=false', model, latency)
                     return {'content': content, 'model': model, 'latency_seconds': latency, 'error': None}
-                except RateLimitError as exc:
-                    logger.warning('model_rate_limited model=%s error=%s', model, exc)
-                    last_error = str(exc)
-                    break
-                except (APIError, APITimeoutError) as exc:
-                    logger.warning('model_api_error model=%s error=%s', model, exc)
-                    last_error = str(exc)
-                    break
                 except Exception as exc:
-                    logger.exception('model_unexpected_error model=%s', model)
+                    if self._is_rate_limit_error(exc):
+                        logger.warning('model_rate_limited model=%s error=%s', model, exc)
+                    else:
+                        logger.warning('model_api_error model=%s error=%s', model, exc)
                     last_error = str(exc)
                     break
         return {
@@ -186,19 +188,9 @@ class AIService:
 
                 try:
                     logger.info('model_attempt model=%s attempt=%s stream=true', model, attempt + 1)
-                    stream = self.client.chat.completions.create(
-                        model=model,
-                        messages=messages,
-                        temperature=self.settings.model_temperature,
-                        timeout=self.settings.request_timeout_seconds,
-                        stream=True,
-                    )
-
                     yielded_any = False
-                    for chunk in stream:
-                        if not chunk.choices:
-                            continue
-                        delta = chunk.choices[0].delta.content or ''
+                    response = self._create_chat_completion(model, messages, stream=True)
+                    for delta in self._iter_stream_deltas(response):
                         if not delta:
                             continue
                         yielded_any = True
@@ -232,16 +224,11 @@ class AIService:
                     }
                     return
 
-                except RateLimitError as exc:
-                    logger.warning('model_rate_limited model=%s stream=true error=%s', model, exc)
-                    last_error = str(exc)
-                    break
-                except (APIError, APITimeoutError) as exc:
-                    logger.warning('model_api_error model=%s stream=true error=%s', model, exc)
-                    last_error = str(exc)
-                    break
                 except Exception as exc:
-                    logger.exception('model_unexpected_error model=%s stream=true', model)
+                    if self._is_rate_limit_error(exc):
+                        logger.warning('model_rate_limited model=%s stream=true error=%s', model, exc)
+                    else:
+                        logger.warning('model_api_error model=%s stream=true error=%s', model, exc)
                     last_error = str(exc)
                     break
 
@@ -252,3 +239,74 @@ class AIService:
             'latency_seconds': None,
             'error': last_error,
         }
+
+    def _chat_completions_url(self) -> str:
+        return f'{self.settings.openrouter_base_url.rstrip("/")}/chat/completions'
+
+    def _create_chat_completion(self, model: str, messages: List[Dict[str, str]], stream: bool):
+        response = self.scraper.post(
+            self._chat_completions_url(),
+            json={
+                'model': model,
+                'messages': messages,
+                'temperature': self.settings.model_temperature,
+                'stream': stream,
+            },
+            timeout=self.settings.request_timeout_seconds,
+            stream=stream,
+        )
+        response.raise_for_status()
+        return response
+
+    def _extract_chat_content(self, payload: Dict[str, Any]) -> str:
+        choices = payload.get('choices') or []
+        if not choices:
+            return ''
+        message = choices[0].get('message') or {}
+        return self._coerce_content_to_text(message.get('content'))
+
+    def _iter_stream_deltas(self, response) -> Generator[str, None, None]:
+        try:
+            for raw_line in response.iter_lines(decode_unicode=True):
+                if not raw_line:
+                    continue
+
+                line = raw_line.strip()
+                if not line.startswith('data:'):
+                    continue
+
+                data = line[5:].strip()
+                if data == '[DONE]':
+                    return
+
+                payload = json.loads(data)
+                choices = payload.get('choices') or []
+                if not choices:
+                    continue
+
+                delta = choices[0].get('delta') or {}
+                text = self._coerce_content_to_text(delta.get('content'))
+                if text:
+                    yield text
+        finally:
+            response.close()
+
+    def _coerce_content_to_text(self, content: Any) -> str:
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            parts: List[str] = []
+            for item in content:
+                if isinstance(item, str):
+                    parts.append(item)
+                    continue
+                if not isinstance(item, dict):
+                    continue
+                if item.get('type') == 'text' and item.get('text'):
+                    parts.append(str(item['text']))
+            return ''.join(parts)
+        return ''
+
+    def _is_rate_limit_error(self, exc: Exception) -> bool:
+        response = getattr(exc, 'response', None)
+        return bool(response is not None and getattr(response, 'status_code', None) == 429)
